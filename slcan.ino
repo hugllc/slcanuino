@@ -1,8 +1,10 @@
-#include <mcp2515_defs.h>
-#include <mcp2515.h>
-#include <defaults.h>
-#include <global.h>
-#include <Canbus.h>
+#include "Canbus/mcp2515_defs.h"
+#include "Canbus/mcp2515.h"
+#include "Canbus/defaults.h"
+#include "Canbus/global.h"
+#include "Canbus/Canbus.h"
+#include "Canbus/Canbus.cpp"
+#include "Canbus/mcp2515.c"
 
 #define LED_OPEN 7
 #define LED_ERR 8
