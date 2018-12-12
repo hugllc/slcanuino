@@ -1,23 +1,28 @@
-#include <mcp2515_defs.h>
-#include <mcp2515.h>
-#include <defaults.h>
-#include <global.h>
-#include <Canbus.h>
+//#include <mcp2515_defs.h>
+//#include <mcp2515.h>
+//#include <defaults.h>
+//#include <global.h>
+//#include <Canbus.h>
+#include <mcp_can.h>
 
 #define LED_OPEN 7
 #define LED_ERR 8
 #define CMD_LEN (sizeof("T12345678811223344556677881234\r")+1)
 
-int g_can_speed = CANSPEED_500; // default: 500k
-int g_ts_en = 0;
+int g_can_speed = CAN_125KBPS; // default: 500k
+int g_ts_en = 10;
+
+MCP_CAN Canbus(g_ts_en);
+
 
 // the setup function runs once when you press reset or power the board
 void setup() {
   pinMode(LED_OPEN, OUTPUT);
   pinMode(LED_ERR, OUTPUT);
   Serial.begin(1000000); // select from 115200,500000,1000000
-  if (Canbus.init(g_can_speed)) {
+  if (Canbus.begin(MCP_ANY, g_can_speed, MCP_8MHZ) == CAN_OK) {
     digitalWrite(LED_ERR, LOW);
+    Canbus.setMode(MCP_NORMAL);
   } else {
     digitalWrite(LED_ERR, HIGH);
   }
@@ -26,31 +31,34 @@ void setup() {
 // transfer messages from CAN bus to host
 void xfer_can2tty()
 {
-  tCAN msg;
+  uint8_t ret;
+  uint8_t data[8];
+  uint32_t id = 0;
+  uint8_t length = 0;
   char buf[CMD_LEN];
-  int i;
+  uint16_t i;
   static uint16_t ts = 0;
   char *p;
 
-  while (Canbus.message_rx(&msg)) {
+  while (Canbus.readMsgBuf(&id, &length, data) == CAN_OK) {
     p = buf;
-    if (msg.header.ide) {
-      if (msg.header.rtr) {
-        sprintf(p, "R%04X%04X%01d", msg.id, msg.ide, msg.header.length);
+    if ((id & 0x80000000) == 0x80000000) {
+      if ((id & 0x40000000) == 0x40000000) {
+        sprintf(p, "R%08lX%01d", id, length);
       } else {
-        sprintf(p, "T%04X%04X%01d", msg.id, msg.ide, msg.header.length);
+        sprintf(p, "T%08lX%01d", id, length);
       }
       p += 10;
     } else {
-      if (msg.header.rtr) {
-        sprintf(p, "r%03X%01X", msg.id, msg.header.length);
+      if ((id & 0x40000000) == 0x40000000) {
+        sprintf(p, "r%03X%01X", (unsigned int)id, length);
       } else {
-        sprintf(p, "t%03X%01X", msg.id, msg.header.length);
+        sprintf(p, "t%03X%01X", (unsigned int)id, length);
       }
       p += 5;
     }
-    for (i = 0; i < msg.header.length; i++) {
-      sprintf(p + (i * 2), "%02X", msg.data[i]);
+    for (i = 0; i < length; i++) {
+      sprintf(p + (i * 2), "%02X", data[i]);
     }
     p += i * 2;
 
@@ -78,42 +86,44 @@ void slcan_nack()
 
 void send_canmsg(char *buf)
 {
-  tCAN msg;
-  int len = strlen(buf) - 1;
-  int val, vale;
+  uint8_t data[8];
+  uint32_t id;
+  uint8_t length;
+  uint16_t len = strlen(buf) - 1;
+  uint32_t val;
   int is_eff = buf[0] & 0x20 ? 0 : 1;
-  int is_rtr = buf[0] & 0x02 ? 1 : 0;
+  //int is_rtr = buf[0] & 0x02 ? 1 : 0;
 
   if (!is_eff && len >= 4) { // SFF
     sscanf(&buf[1], "%03x", &val);
-    msg.id = val;
-    msg.header.rtr = is_rtr;
-    msg.header.ide = 0;
+    id = val;
     sscanf(&buf[4], "%01x", &val);
-    msg.header.length = val;
-    if (len - 4 - 1 == msg.header.length * 2) {
-      for (int i = 0; i < msg.header.length; i++) {
+    length = val;
+    if (len - 4 - 1 == length * 2) {
+      for (uint8_t i = 0; (i < length) && (i < sizeof(data)); i++) {
         sscanf(&buf[5 + (i * 2)], "%02x", &val);
-        msg.data[i] = val;
+        data[i] = val;
       }
     }
-    Canbus.message_tx(&msg);
+    Canbus.sendMsgBuf(id, length, data);
 
   } else if (is_eff && len >= 9) { // EFF
-    sscanf(&buf[1], "%04x%04x", &val, &vale);
-    msg.id = val & 0x1fff;
-    msg.ide = vale;
-    msg.header.rtr = is_rtr;
-    msg.header.ide = 1;
+    sscanf(&buf[1], "%08lx", &val);
+    id = val;
     sscanf(&buf[9], "%01x", &val);
-    msg.header.length = val;
-    if (len - 9 - 1 == msg.header.length * 2) {
-      for (int i = 0; i < msg.header.length; i++) {
+    length = val;
+    if (len - 9 - 1 == length * 2) {
+      for (int i = 0; i < length; i++) {
         sscanf(&buf[10 + (i * 2)], "%02x", &val);
-        msg.data[i] = val;
+        data[i] = val;
       }
     }
-    Canbus.message_tx(&msg);
+    Serial.print("Sending to ");
+    Serial.print(id, HEX);
+    Serial.print("   ");
+    Serial.print(length);
+    Serial.println("");
+    Canbus.sendMsgBuf(id, length, data);
   }
 }
 
@@ -123,8 +133,9 @@ void pars_slcancmd(char *buf)
     // common commands
     case 'O': // open channel
       digitalWrite(LED_OPEN, HIGH);
-      if (Canbus.init(g_can_speed)) {
+      if (Canbus.begin(MCP_ANY, g_can_speed, MCP_8MHZ) == CAN_OK) {
         digitalWrite(LED_ERR, LOW);
+        Canbus.setMode(MCP_NORMAL);
       } else {
         digitalWrite(LED_ERR, HIGH);
       }
@@ -168,26 +179,26 @@ void pars_slcancmd(char *buf)
           slcan_nack();
           break;
         case '3': // 100k
-          g_can_speed = CANSPEED_100;
+          g_can_speed = CAN_100KBPS;
           slcan_ack();
           break;
         case '4': // 125k
-          g_can_speed = CANSPEED_125;
+          g_can_speed = CAN_125KBPS;
           slcan_ack();
           break;
         case '5': // 250k
-          g_can_speed = CANSPEED_250;
+          g_can_speed = CAN_250KBPS;
           slcan_ack();
           break;
         case '6': // 500k
-          g_can_speed = CANSPEED_500;
+          g_can_speed = CAN_500KBPS;
           slcan_ack();
           break;
         case '7': // 800k
           slcan_nack();
           break;
         case '8': // 1000k
-          g_can_speed = CANSPEED_1000;
+          g_can_speed = CAN_1000KBPS;
           slcan_ack();
           break;
         default:
