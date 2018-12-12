@@ -1,8 +1,4 @@
-//#include <mcp2515_defs.h>
-//#include <mcp2515.h>
-//#include <defaults.h>
-//#include <global.h>
-//#include <Canbus.h>
+#include <Arduino.h>
 #include <mcp_can.h>
 
 #define LED_OPEN 7
