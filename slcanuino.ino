@@ -8,6 +8,9 @@
 #define LED_OPEN 7
 #define LED_ERR 8
 #define CMD_LEN (sizeof("T12345678811223344556677881234\r")+1)
+#define RTR_BIT 0x40000000
+#define EXT_BIT 0x80000000
+
 
 int g_can_speed = CAN_125KBPS; // default: 500k
 int g_ts_en = 10;
@@ -42,15 +45,15 @@ void xfer_can2tty()
 
   while (Canbus.readMsgBuf(&id, &length, data) == CAN_OK) {
     p = buf;
-    if ((id & 0x80000000) == 0x80000000) {
-      if ((id & 0x40000000) == 0x40000000) {
+    if ((id & EXT_BIT) == EXT_BIT) {
+      if ((id & RTR_BIT) == RTR_BIT) {
         sprintf(p, "R%08lX%01d", id, length);
       } else {
         sprintf(p, "T%08lX%01d", id, length);
       }
       p += 10;
     } else {
-      if ((id & 0x40000000) == 0x40000000) {
+      if ((id & RTR_BIT) == RTR_BIT) {
         sprintf(p, "r%03X%01X", (unsigned int)id, length);
       } else {
         sprintf(p, "t%03X%01X", (unsigned int)id, length);
@@ -92,11 +95,14 @@ void send_canmsg(char *buf)
   uint16_t len = strlen(buf) - 1;
   uint32_t val;
   int is_eff = buf[0] & 0x20 ? 0 : 1;
-  //int is_rtr = buf[0] & 0x02 ? 1 : 0;
+  int is_rtr = buf[0] & 0x02 ? 1 : 0;
 
   if (!is_eff && len >= 4) { // SFF
     sscanf(&buf[1], "%03x", &val);
     id = val;
+    if (is_rtr) {
+      id |= RTR_BIT;
+    }
     sscanf(&buf[4], "%01x", &val);
     length = val;
     if (len - 4 - 1 == length * 2) {
@@ -109,7 +115,10 @@ void send_canmsg(char *buf)
 
   } else if (is_eff && len >= 9) { // EFF
     sscanf(&buf[1], "%08lx", &val);
-    id = val;
+    id = val | EXT_BIT;
+    if (is_rtr) {
+      id |= RTR_BIT;
+    }
     sscanf(&buf[9], "%01x", &val);
     length = val;
     if (len - 9 - 1 == length * 2) {
@@ -118,11 +127,6 @@ void send_canmsg(char *buf)
         data[i] = val;
       }
     }
-    Serial.print("Sending to ");
-    Serial.print(id, HEX);
-    Serial.print("   ");
-    Serial.print(length);
-    Serial.println("");
     Canbus.sendMsgBuf(id, length, data);
   }
 }
