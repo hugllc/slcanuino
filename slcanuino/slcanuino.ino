@@ -30,7 +30,6 @@ void setup() {
 // transfer messages from CAN bus to host
 void xfer_can2tty()
 {
-  uint8_t ret;
   uint8_t data[8];
   uint32_t id = 0;
   uint8_t length = 0;
@@ -90,21 +89,22 @@ void send_canmsg(char *buf)
   uint8_t length;
   uint16_t len = strlen(buf) - 1;
   uint32_t val;
+  unsigned int val16;
   int is_eff = buf[0] & 0x20 ? 0 : 1;
   int is_rtr = buf[0] & 0x02 ? 1 : 0;
 
   if (!is_eff && len >= 4) { // SFF
-    sscanf(&buf[1], "%03x", &val);
-    id = val;
+    sscanf(&buf[1], "%03x", &val16);
+    id = val16;
     if (is_rtr) {
       id |= RTR_BIT;
     }
-    sscanf(&buf[4], "%01x", &val);
-    length = val;
+    sscanf(&buf[4], "%01x", &val16);
+    length = val16;
     if (len - 4 - 1 == length * 2) {
       for (uint8_t i = 0; (i < length) && (i < sizeof(data)); i++) {
-        sscanf(&buf[5 + (i * 2)], "%02x", &val);
-        data[i] = val;
+        sscanf(&buf[5 + (i * 2)], "%02x", &val16);
+        data[i] = val16;
       }
     }
     Canbus.sendMsgBuf(id, length, data);
@@ -115,12 +115,12 @@ void send_canmsg(char *buf)
     if (is_rtr) {
       id |= RTR_BIT;
     }
-    sscanf(&buf[9], "%01x", &val);
-    length = val;
+    sscanf(&buf[9], "%01x", &val16);
+    length = val16;
     if (len - 9 - 1 == length * 2) {
       for (int i = 0; i < length; i++) {
-        sscanf(&buf[10 + (i * 2)], "%02x", &val);
-        data[i] = val;
+        sscanf(&buf[10 + (i * 2)], "%02x", &val16);
+        data[i] = val16;
       }
     }
     Canbus.sendMsgBuf(id, length, data);

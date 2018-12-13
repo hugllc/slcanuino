@@ -7,13 +7,15 @@ RM          = rm -Rf
 
 .PHONY: verify upload clean
 
-default: verify
+
+
+all: verify
 
 verify:
-	$(PLATFORMIO) run
+	$(PLATFORMIO) run -v
 
 upload:
-	$(PLATFORMIO) run -t upload --upload-port ${PORT}
+	$(PLATFORMIO) run -v -t upload --upload-port ${PORT}
 
 update:
 	${PLATFORMIO} platform update
