@@ -1,8 +1,8 @@
-PLATFORMIO = platformio
-PORT_NAME  = ttyACM0
-PORT       = /dev/$(PORT_NAME)
-
-RM         = rm -Rf
+PLATFORMIO  = platformio
+PORT_NAME  ?= ttyACM0
+PORT        = /dev/$(PORT_NAME)
+DEV        ?= can0
+RM          = rm -Rf
 
 
 .PHONY: verify upload clean
@@ -20,12 +20,12 @@ update:
 	${PLATFORMIO} lib update
 
 attach:
-	sudo slcan_attach -f -s6 -o $(PORT)
-	sudo slcand -S 1000000 $(PORT_NAME) can0
-	sudo ip link set up can0
+	sudo slcan_attach -f -s4 -o $(PORT)
+	sudo slcand -S 1000000 $(PORT_NAME) ${DEV}
+	sudo ip link set up ${DEV}
 
 detach:
-	sudo ip link set down can0
+	sudo ip link set down ${DEV}
 	sudo killall slcand
 
 clean:
